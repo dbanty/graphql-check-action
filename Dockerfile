@@ -26,4 +26,4 @@ FROM gcr.io/distroless/cc AS runtime
 COPY --from=build /graphql-check-action/target/release/graphql-check-action .
 
 # set the startup command to run your binary
-CMD ["./graphql-check-action"]
+ENTRYPOINT ["./graphql-check-action"]
