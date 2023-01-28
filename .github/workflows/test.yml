@@ -1,0 +1,10 @@
+on: [push]
+jobs:
+  basic_checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check GraphQL
+        uses: ./
+        with:
+        endpoint: https://api.github.com/graphql
