@@ -19,11 +19,13 @@ COPY ./src ./src
 RUN rm ./target/release/deps/graphql_check_action*
 RUN cargo build --release
 
-# our final base
-FROM gcr.io/distroless/cc AS runtime
-
-# copy the build artifact from the build stage
-COPY --from=build /graphql-check-action/target/release/graphql-check-action .
-
-# set the startup command to run your binary
-ENTRYPOINT ["./graphql-check-action"]
+ENTRYPOINT ["./target/release/graphql-check-action"]
+#
+## our final base
+#FROM gcr.io/distroless/cc AS runtime
+#
+## copy the build artifact from the build stage
+#COPY --from=build /graphql-check-action/target/release/graphql-check-action .
+#
+## set the startup command to run your binary
+#ENTRYPOINT ["./graphql-check-action"]
