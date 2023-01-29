@@ -21,3 +21,4 @@ runs:
   args:
     - ${{ inputs.endpoint }}
     - ${{ inputs.auth }}
+    - ${{ inputs.subgraph }}
