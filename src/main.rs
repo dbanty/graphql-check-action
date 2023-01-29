@@ -1,4 +1,4 @@
-use reqwest::StatusCode;
+use reqwest::{RequestBuilder, StatusCode};
 use std::env;
 use std::fmt::Display;
 use std::fs::write;
@@ -12,12 +12,16 @@ async fn main() {
 
     let args: Vec<String> = env::args().collect();
     let url = &args[1];
-    let auth = &args[2];
+    let auth = match args[2].as_str() {
+        "" => None,
+        auth => Some(auth),
+    };
+    let subgraph = &args[3];
 
     let mut errors = Vec::new();
     let mut unauthed_err = basic_query(url, None).await.err();
-    if !auth.is_empty() {
-        if let Some(authed_err) = basic_query(url, Some(auth)).await.err() {
+    if !auth.is_none() {
+        if let Some(authed_err) = basic_query(url, auth).await.err() {
             errors.push(authed_err);
         }
         unauthed_err = match unauthed_err {
@@ -28,6 +32,16 @@ async fn main() {
     }
     if let Some(err) = unauthed_err {
         errors.push(err);
+    }
+
+    match subgraph.as_str() {
+        "true" => {
+            if let Err(err) = check_subgraph(url, auth).await {
+                errors.push(err);
+            }
+        }
+        "false" => {}
+        _ => errors.push(Error::BadSubgraphValue),
     }
 
     if !errors.is_empty() {
@@ -51,6 +65,8 @@ enum Error {
     GraphQLError(String),
     AuthNotEnforced,
     BadHeader,
+    NotASubgraph,
+    BadSubgraphValue,
 }
 
 impl Display for Error {
@@ -68,6 +84,10 @@ impl Display for Error {
                 "Provided `auth` input was not a valid header in the format of `name: value`"
             ),
             Error::BadStatus(status) => write!(f, "Got status code: {status}"),
+            Error::NotASubgraph => write!(f, "GraphQL endpoint is not a subgraph"),
+            Error::BadSubgraphValue => {
+                write!(f, "`subgraph` input must be either `true` or `false`")
+            }
         }
     }
 }
@@ -77,13 +97,16 @@ async fn basic_query(url: &str, auth_header: Option<&str>) -> Result<(), Error> 
     let request = client.post(url).json(&json!({
         "query": "query{__typename}",
     }));
-    let request = if let Some(auth) = auth_header {
-        let (header_name, header_value) = auth.split_once(':').ok_or(Error::BadHeader)?;
-        let header_value = header_value.trim();
-        request.header(header_name, header_value)
+    let request = add_auth(auth_header, request)?;
+    let body = get_json(request).await?;
+    if body == json!({"data": {"__typename": "Query"}}) {
+        Ok(())
     } else {
-        request
-    };
+        Err(Error::NotGraphQL)
+    }
+}
+
+async fn get_json(request: RequestBuilder) -> Result<Value, Error> {
     let res = request.send().await.map_err(|err| {
         if err.is_builder() {
             Error::BadUri
@@ -95,21 +118,28 @@ async fn basic_query(url: &str, auth_header: Option<&str>) -> Result<(), Error> 
         return Err(Error::BadStatus(err.status().unwrap()));
     }
     let body: Value = res.json().await.or(Err(Error::NotGraphQL))?;
-    if body == json!({"data": {"__typename": "Query"}}) {
-        Ok(())
-    } else if let Some(obj) = body.get("errors") {
+    if let Some(obj) = body.get("errors") {
         Err(Error::GraphQLError(obj.to_string()))
     } else {
-        Err(Error::NotGraphQL)
+        Ok(body)
+    }
+}
+
+#[cfg(test)]
+mod test_utils {
+    pub const BASE_URL: &str = "https://graphql-test.up.railway.app";
+    pub const TOKEN: &str = env!("GRAPHQL_TOKEN");
+
+    pub fn auth_header() -> Option<String> {
+        Some(format!("Authorization: Bearer {TOKEN}"))
     }
 }
 
 #[cfg(test)]
 mod test_basic_query {
+    use super::test_utils::*;
     use super::*;
     use crate::Error::*;
-
-    const BASE_URL: &str = "https://graphql-test.up.railway.app";
 
     #[tokio::test]
     async fn unauth_success() {
@@ -157,12 +187,6 @@ mod test_basic_query {
         assert_eq!(basic_query(&url, None).await, Err(NotGraphQL));
     }
 
-    const TOKEN: &str = env!("GRAPHQL_TOKEN");
-
-    fn auth_header() -> Option<String> {
-        Some(format!("Authorization: Bearer {TOKEN}"))
-    }
-
     #[tokio::test]
     async fn auth_success() {
         let url = format!("{BASE_URL}/graphql-auth");
@@ -191,5 +215,55 @@ mod test_basic_query {
             Err(BadStatus(StatusCode::BAD_REQUEST)) => (),
             other => panic!("Expected Err(GraphQLError(_)), got {:?}", other),
         }
+    }
+}
+
+async fn check_subgraph(url: &str, auth: Option<&str>) -> Result<(), Error> {
+    let client = reqwest::Client::new();
+    let request = client.post(url).json(&json!({
+        "query": "query{_service{sdl}}"
+    }));
+    let request = add_auth(auth, request)?;
+    if get_json(request).await.is_ok() {
+        Ok(())
+    } else {
+        Err(Error::NotASubgraph)
+    }
+}
+
+fn add_auth(auth: Option<&str>, request: RequestBuilder) -> Result<RequestBuilder, Error> {
+    if let Some(auth) = auth {
+        let (header_name, header_value) = auth.split_once(':').ok_or(Error::BadHeader)?;
+        let header_value = header_value.trim();
+        Ok(request.header(header_name, header_value))
+    } else {
+        Ok(request)
+    }
+}
+
+#[cfg(test)]
+mod test_check_subgraph {
+    use super::test_utils::*;
+    use super::*;
+    use crate::Error::NotASubgraph;
+
+    #[tokio::test]
+    async fn happy() {
+        let url = format!("{BASE_URL}/subgraph");
+        check_subgraph(&url, None).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn happy_with_auth() {
+        let url = format!("{BASE_URL}/subgraph-auth");
+        check_subgraph(&url, auth_header().as_deref())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn not_a_subgraph() {
+        let url = format!("{BASE_URL}/graphql");
+        assert_eq!(check_subgraph(&url, None).await, Err(NotASubgraph));
     }
 }

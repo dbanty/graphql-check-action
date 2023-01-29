@@ -8,6 +8,10 @@ inputs:
     description: 'The Authorization header to use'
     required: false
     default: ''
+  subgraph:
+    description: 'Whether the graph is a subgraph'
+    required: false
+    default: 'false'
 outputs:
   error:
     description: 'The description of any error that occurred'
