@@ -12,6 +12,10 @@ inputs:
     description: 'Whether the graph is a subgraph'
     required: false
     default: 'false'
+  allow_introspection:
+    description: 'Whether introspection is allowed, defaults to value of `subgraph`'
+    required: false
+    default: ''
 outputs:
   error:
     description: 'The description of any error that occurred'
@@ -22,3 +26,4 @@ runs:
     - ${{ inputs.endpoint }}
     - ${{ inputs.auth }}
     - ${{ inputs.subgraph }}
+    - ${{ inputs.allow_introspection }}

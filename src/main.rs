@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use reqwest::{RequestBuilder, StatusCode};
 use std::env;
 use std::fmt::Display;
@@ -17,6 +18,7 @@ async fn main() {
         auth => Some(auth),
     };
     let subgraph = &args[3];
+    let introspection = &args[4];
 
     let mut errors = Vec::new();
     let mut unauthed_err = basic_query(url, None).await.err();
@@ -34,19 +36,39 @@ async fn main() {
         errors.push(err);
     }
 
-    match subgraph.as_str() {
-        "true" => {
-            if let Err(err) = check_subgraph(url, auth).await {
-                errors.push(err);
-            }
+    let subgraph_enabled = match subgraph.as_str() {
+        "true" => true,
+        "false" => false,
+        _ => {
+            errors.push(Error::BadSubgraphValue);
+            false
         }
-        "false" => {}
-        _ => errors.push(Error::BadSubgraphValue),
+    };
+    if subgraph_enabled {
+        if let Err(err) = check_subgraph(url, auth).await {
+            errors.push(err);
+        }
+    }
+
+    let allow_introspection = match introspection.as_str() {
+        "true" => true,
+        "false" => false,
+        "" => subgraph_enabled,
+        _ => {
+            errors.push(Error::BadIntrospectionValue);
+            true
+        }
+    };
+    if !allow_introspection {
+        if let Err(err) = require_introspection_disabled(url, auth).await {
+            errors.push(err);
+        }
     }
 
     if !errors.is_empty() {
         let errors_str = errors
             .iter()
+            .unique()
             .map(|e| e.to_string())
             .collect::<Vec<String>>()
             .join(", ");
@@ -56,7 +78,7 @@ async fn main() {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, Hash, PartialEq)]
 enum Error {
     BadUri,
     BadStatus(StatusCode),
@@ -67,6 +89,8 @@ enum Error {
     BadHeader,
     NotASubgraph,
     BadSubgraphValue,
+    IntrospectionEnabled,
+    BadIntrospectionValue,
 }
 
 impl Display for Error {
@@ -88,6 +112,16 @@ impl Display for Error {
             Error::BadSubgraphValue => {
                 write!(f, "`subgraph` input must be either `true` or `false`")
             }
+            Error::IntrospectionEnabled => write!(
+                f,
+                "Introspection is enabled for the GraphQL server but not allowed"
+            ),
+            Error::BadIntrospectionValue => {
+                write!(
+                    f,
+                    "`allow_introspection` input must be either `true` or `false`"
+                )
+            }
         }
     }
 }
@@ -103,6 +137,16 @@ async fn basic_query(url: &str, auth_header: Option<&str>) -> Result<(), Error> 
         Ok(())
     } else {
         Err(Error::NotGraphQL)
+    }
+}
+
+fn add_auth(auth: Option<&str>, request: RequestBuilder) -> Result<RequestBuilder, Error> {
+    if let Some(auth) = auth {
+        let (header_name, header_value) = auth.split_once(':').ok_or(Error::BadHeader)?;
+        let header_value = header_value.trim();
+        Ok(request.header(header_name, header_value))
+    } else {
+        Ok(request)
     }
 }
 
@@ -231,16 +275,6 @@ async fn check_subgraph(url: &str, auth: Option<&str>) -> Result<(), Error> {
     }
 }
 
-fn add_auth(auth: Option<&str>, request: RequestBuilder) -> Result<RequestBuilder, Error> {
-    if let Some(auth) = auth {
-        let (header_name, header_value) = auth.split_once(':').ok_or(Error::BadHeader)?;
-        let header_value = header_value.trim();
-        Ok(request.header(header_name, header_value))
-    } else {
-        Ok(request)
-    }
-}
-
 #[cfg(test)]
 mod test_check_subgraph {
     use super::test_utils::*;
@@ -265,5 +299,40 @@ mod test_check_subgraph {
     async fn not_a_subgraph() {
         let url = format!("{BASE_URL}/graphql");
         assert_eq!(check_subgraph(&url, None).await, Err(NotASubgraph));
+    }
+}
+
+#[cfg(test)]
+mod test_require_introspection_disabled {
+    use super::test_utils::*;
+    use super::*;
+    use crate::Error::IntrospectionEnabled;
+
+    #[tokio::test]
+    async fn happy() {
+        let url = format!("{BASE_URL}/graphql-no-introspection");
+        require_introspection_disabled(&url, None).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn introspection_enabled() {
+        let url = format!("{BASE_URL}/graphql");
+        assert_eq!(
+            require_introspection_disabled(&url, None).await,
+            Err(IntrospectionEnabled)
+        );
+    }
+}
+
+async fn require_introspection_disabled(url: &str, auth: Option<&str>) -> Result<(), Error> {
+    let client = reqwest::Client::new();
+    let request = client.post(url).json(&json!({
+        "query": "query{__schema{types{name}}}"
+    }));
+    let request = add_auth(auth, request)?;
+    match get_json(request).await {
+        Ok(_) => Err(Error::IntrospectionEnabled),
+        Err(Error::GraphQLError(_)) => Ok(()),
+        Err(e) => Err(e),
     }
 }
