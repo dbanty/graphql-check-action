@@ -13,14 +13,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Check GraphQL
+        id: test
         continue-on-error: true
         uses: ./
         with:
           endpoint: https://doesntexist.dylananthony.com
       - name: Verify failure
-        if: failure()
+        if: steps.test.conclusion == 'failure'
         run: echo "Failed as expected"
       - name: Unexpected success
-        if: success()
+        if: steps.test.conclusion != 'failure'
         run: echo "Succeeded unexpectedly" && exit 1
 
