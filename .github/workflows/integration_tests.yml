@@ -1,0 +1,53 @@
+on: [push]
+jobs:
+  basic_checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check GraphQL
+        uses: ./
+        with:
+          endpoint: https://graphql-test.up.railway.app/graphql
+  bad_url:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check GraphQL
+        id: test
+        continue-on-error: true
+        uses: ./
+        with:
+          endpoint: https://doesntexist.dylananthony.com
+      - name: Verify failure
+        if: steps.test.outputs.error != ''
+        run: echo "Failed as expected"
+      - name: Unexpected success
+        if: steps.test.outputs.error == ''
+        run: echo "Succeeded unexpectedly" && exit 1
+  valid_auth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check GraphQL
+        id: test
+        uses: ./
+        with:
+          endpoint: https://graphql-test.up.railway.app/graphql-auth
+          auth: ${{ secrets.GRAPHQL_TOKEN }}
+  auth_not_enforced:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check GraphQL
+        id: test
+        continue-on-error: true
+        uses: ./
+        with:
+          endpoint: https://graphql-test.up.railway.app/graphql
+          auth: ${{ secrets.GRAPHQL_TOKEN }}
+      - name: Verify failure
+        if: steps.test.outputs.error != ''
+        run: echo "Failed as expected"
+      - name: Unexpected success
+        if: steps.test.outputs.error == ''
+        run: echo "Succeeded unexpectedly" && exit 1

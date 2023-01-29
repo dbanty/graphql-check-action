@@ -4,6 +4,10 @@ inputs:
   endpoint:
     description: 'The GraphQL endpoint to check'
     required: true
+  auth:
+    description: 'The Authorization header to use'
+    required: false
+    default: ''
 outputs:
   error:
     description: 'The description of any error that occurred'
@@ -12,3 +16,4 @@ runs:
   image: 'Dockerfile'
   args:
     - ${{ inputs.endpoint }}
+    - ${{ inputs.auth }}
