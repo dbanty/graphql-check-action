@@ -33,7 +33,7 @@ jobs:
         uses: ./
         with:
           endpoint: https://graphql-test.up.railway.app/graphql-auth
-          auth: ${{ secrets.GRAPHQL_TOKEN }}
+          auth: "Authorization: Bearer ${{ secrets.GRAPHQL_TOKEN }}"
   auth_not_enforced:
     runs-on: ubuntu-latest
     steps:
@@ -44,7 +44,7 @@ jobs:
         uses: ./
         with:
           endpoint: https://graphql-test.up.railway.app/graphql
-          auth: ${{ secrets.GRAPHQL_TOKEN }}
+          auth: "Authorization: Bearer ${{ secrets.GRAPHQL_TOKEN }}"
       - name: Verify failure
         if: steps.test.outputs.error != ''
         run: echo "Failed as expected"
