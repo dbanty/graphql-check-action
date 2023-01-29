@@ -19,9 +19,9 @@ jobs:
         with:
           endpoint: https://doesntexist.dylananthony.com
       - name: Verify failure
-        if: steps.test.conclusion == 'failure'
+        if: steps.test.outputs.error != ''
         run: echo "Failed as expected"
       - name: Unexpected success
-        if: steps.test.conclusion != 'failure'
+        if: steps.test.outputs.error == ''
         run: echo "Succeeded unexpectedly" && exit 1
 

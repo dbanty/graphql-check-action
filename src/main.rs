@@ -1,14 +1,18 @@
 use std::env;
+use std::fs::write;
 use std::process::exit;
 
 use serde_json::{json, Value};
 
 #[tokio::main]
 async fn main() {
+    let github_output_path = env::var("GITHUB_OUTPUT").unwrap();
+
     let args: Vec<String> = env::args().collect();
     let url = &args[1];
     if let Err(e) = check_basics(url).await {
         eprintln!("Error: {e}");
+        write(github_output_path, format!("error={e}")).unwrap();
         exit(1);
     }
 }

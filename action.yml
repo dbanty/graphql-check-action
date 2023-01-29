@@ -4,6 +4,9 @@ inputs:
   endpoint:
     description: 'The GraphQL endpoint to check'
     required: true
+outputs:
+  error:
+    description: 'The description of any error that occurred'
 runs:
   using: 'docker'
   image: 'Dockerfile'
