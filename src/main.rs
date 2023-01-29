@@ -157,16 +157,22 @@ mod test_basic_query {
         assert_eq!(basic_query(&url, None).await, Err(NotGraphQL));
     }
 
+    const TOKEN: &str = env!("GRAPHQL_TOKEN");
+
+    fn auth_header() -> Option<String> {
+        Some(format!("Authorization: Bearer {TOKEN}"))
+    }
+
     #[tokio::test]
     async fn auth_success() {
         let url = format!("{BASE_URL}/graphql-auth");
-        assert_eq!(basic_query(&url, Some(env!("GRAPHQL_TOKEN"))).await, Ok(()));
+        assert_eq!(basic_query(&url, auth_header().as_deref()).await, Ok(()));
     }
 
     #[tokio::test]
     async fn subgraph_auth_success() {
         let url = format!("{BASE_URL}/subgraph-auth");
-        assert!(basic_query(&url, Some(env!("GRAPHQL_TOKEN"))).await.is_ok());
+        assert!(basic_query(&url, auth_header().as_deref()).await.is_ok());
     }
 
     #[tokio::test]

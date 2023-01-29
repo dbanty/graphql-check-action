@@ -1,3 +1,4 @@
+name: Unit tests, linting, and formatting
 on: [push]
 jobs:
   check_format:

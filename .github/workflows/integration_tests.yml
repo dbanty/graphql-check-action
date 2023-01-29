@@ -1,3 +1,4 @@
+name: Test consuming this action
 on: [push]
 jobs:
   basic_checks:
