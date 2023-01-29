@@ -21,5 +21,7 @@ jobs:
           rustup update stable
       - name: Run tests
         run: cargo test
+        env:
+          GRAPHQL_TOKEN: ${{ secrets.GRAPHQL_TOKEN }}
       - name: Lint
         run: cargo clippy
