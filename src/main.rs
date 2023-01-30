@@ -332,10 +332,8 @@ async fn require_introspection_disabled(url: &str, auth: Option<&str>) -> Result
     let request = add_auth(auth, request)?;
     match get_json(request).await {
         Ok(value) => {
-            if let Some(schema) = value.get("__schema") {
-                if schema.get("types").is_some() {
-                    return Err(Error::IntrospectionEnabled);
-                }
+            if let Some(Object(_)) = value.pointer("/data/__schema") {
+                return Err(Error::IntrospectionEnabled);
             }
             Ok(())
         }
