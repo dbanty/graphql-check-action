@@ -110,6 +110,7 @@ jobs:
         with:
           endpoint: https://graphql-test.up.railway.app/subgraph-auth
           subgraph: true
+          auth: "Authorization: Bearer ${{ secrets.GRAPHQL_TOKEN }}"
   insecure_subgraph:
     runs-on: ubuntu-latest
     steps:
