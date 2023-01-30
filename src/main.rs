@@ -331,7 +331,14 @@ async fn require_introspection_disabled(url: &str, auth: Option<&str>) -> Result
     }));
     let request = add_auth(auth, request)?;
     match get_json(request).await {
-        Ok(_) => Err(Error::IntrospectionEnabled),
+        Ok(value) => {
+            if let Some(schema) = value.get("__schema") {
+                if schema.get("types").is_some() {
+                    return Err(Error::IntrospectionEnabled);
+                }
+            }
+            Ok(())
+        }
         Err(Error::GraphQLError(_)) => Ok(()),
         Err(e) => Err(e),
     }
