@@ -8,7 +8,7 @@ jobs:
       - name: Check GraphQL
         uses: ./
         with:
-          endpoint: https://graphql-test.up.railway.app/graphql
+          endpoint: https://graphql-test.up.railway.app/graphql-no-introspection
   bad_url:
     runs-on: ubuntu-latest
     steps:
@@ -35,6 +35,7 @@ jobs:
         with:
           endpoint: https://graphql-test.up.railway.app/graphql-auth
           auth: "Authorization: Bearer ${{ secrets.GRAPHQL_TOKEN }}"
+          allow_introspection: true
   auth_not_enforced:
     runs-on: ubuntu-latest
     steps:
@@ -46,6 +47,7 @@ jobs:
         with:
           endpoint: https://graphql-test.up.railway.app/graphql
           auth: "Authorization: Bearer ${{ secrets.GRAPHQL_TOKEN }}"
+          allow_introspection: true
       - name: Verify failure
         if: steps.test.outputs.error != ''
         run: echo "Failed as expected"
@@ -62,6 +64,7 @@ jobs:
         with:
           endpoint: https://graphql-test.up.railway.app/subgraph
           subgraph: true
+          insecure_subgraph: true
   not_a_subgraph:
     runs-on: ubuntu-latest
     steps:
@@ -72,6 +75,51 @@ jobs:
         uses: ./
         with:
           endpoint: https://graphql-test.up.railway.app/graphql
+          subgraph: true
+          allow_introspection: true
+          insecure_subgraph: true
+      - name: Verify failure
+        if: steps.test.outputs.error != ''
+        run: echo "Failed as expected"
+      - name: Unexpected success
+        if: steps.test.outputs.error == ''
+        run: echo "Succeeded unexpectedly" && exit 1
+  introspection_enabled:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check GraphQL
+        id: test
+        continue-on-error: true
+        uses: ./
+        with:
+          endpoint: https://graphql-test.up.railway.app/graphql
+      - name: Verify failure
+        if: steps.test.outputs.error != ''
+        run: echo "Failed as expected"
+      - name: Unexpected success
+        if: steps.test.outputs.error == ''
+        run: echo "Succeeded unexpectedly" && exit 1
+  secure_subgraph:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check GraphQL
+        id: test
+        uses: ./
+        with:
+          endpoint: https://graphql-test.up.railway.app/subgraph-auth
+          subgraph: true
+  insecure_subgraph:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check GraphQL
+        id: test
+        continue-on-error: true
+        uses: ./
+        with:
+          endpoint: https://graphql-test.up.railway.app/subgraph
           subgraph: true
       - name: Verify failure
         if: steps.test.outputs.error != ''

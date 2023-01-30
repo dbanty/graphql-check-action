@@ -5,6 +5,7 @@ use std::fmt::Display;
 use std::fs::write;
 use std::process::exit;
 
+use serde_json::Value::Object;
 use serde_json::{json, Value};
 
 #[tokio::main]
@@ -19,10 +20,21 @@ async fn main() {
     };
     let subgraph = &args[3];
     let introspection = &args[4];
+    let insecure_subgraph = &args[5];
 
     let mut errors = Vec::new();
+    let is_subgraph = parse_boolean(subgraph, "subgraph").unwrap_or_else(|err| {
+        errors.push(err);
+        false
+    });
+    let allow_insecure_subgraph = parse_boolean(insecure_subgraph, "insecure_subgraph")
+        .unwrap_or_else(|err| {
+            errors.push(err);
+            false
+        });
+
     let mut unauthed_err = basic_query(url, None).await.err();
-    if !auth.is_none() {
+    if auth.is_some() {
         if let Some(authed_err) = basic_query(url, auth).await.err() {
             errors.push(authed_err);
         }
@@ -31,20 +43,14 @@ async fn main() {
             None => Some(Error::AuthNotEnforced),
             other_err => other_err,
         }
+    } else if is_subgraph && !allow_insecure_subgraph {
+        errors.push(Error::InsecureSubgraph)
     }
     if let Some(err) = unauthed_err {
         errors.push(err);
     }
 
-    let subgraph_enabled = match subgraph.as_str() {
-        "true" => true,
-        "false" => false,
-        _ => {
-            errors.push(Error::BadSubgraphValue);
-            false
-        }
-    };
-    if subgraph_enabled {
+    if is_subgraph {
         if let Err(err) = check_subgraph(url, auth).await {
             errors.push(err);
         }
@@ -53,9 +59,9 @@ async fn main() {
     let allow_introspection = match introspection.as_str() {
         "true" => true,
         "false" => false,
-        "" => subgraph_enabled,
+        "" => is_subgraph,
         _ => {
-            errors.push(Error::BadIntrospectionValue);
+            errors.push(Error::BadBoolean("allow_introspection"));
             true
         }
     };
@@ -78,6 +84,14 @@ async fn main() {
     }
 }
 
+fn parse_boolean(value: &str, name: &'static str) -> Result<bool, Error> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(Error::BadBoolean(name)),
+    }
+}
+
 #[derive(Debug, Eq, Hash, PartialEq)]
 enum Error {
     BadUri,
@@ -88,9 +102,9 @@ enum Error {
     AuthNotEnforced,
     BadHeader,
     NotASubgraph,
-    BadSubgraphValue,
+    BadBoolean(&'static str),
     IntrospectionEnabled,
-    BadIntrospectionValue,
+    InsecureSubgraph,
 }
 
 impl Display for Error {
@@ -109,19 +123,12 @@ impl Display for Error {
             ),
             Error::BadStatus(status) => write!(f, "Got status code: {status}"),
             Error::NotASubgraph => write!(f, "GraphQL endpoint is not a subgraph"),
-            Error::BadSubgraphValue => {
-                write!(f, "`subgraph` input must be either `true` or `false`")
-            }
             Error::IntrospectionEnabled => write!(
                 f,
                 "Introspection is enabled for the GraphQL server but not allowed"
             ),
-            Error::BadIntrospectionValue => {
-                write!(
-                    f,
-                    "`allow_introspection` input must be either `true` or `false`"
-                )
-            }
+            Error::BadBoolean(name) => write!(f, "Input `{name}` can only be `true` or `false`"),
+            Error::InsecureSubgraph => write!(f, "Subgraph is not protected by authentication"),
         }
     }
 }
