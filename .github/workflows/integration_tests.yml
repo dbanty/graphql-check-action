@@ -1,5 +1,13 @@
 name: Test consuming this action
-on: [push]
+on:
+  pull_request:
+    branches: [main]
+  workflow_run:
+    workflows: ["Docker Publish"]
+    branches: [main]
+    types:
+      - completed
+
 jobs:
   basic_checks:
     runs-on: ubuntu-latest
