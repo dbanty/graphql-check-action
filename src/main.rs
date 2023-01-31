@@ -23,7 +23,7 @@ async fn main() {
     let insecure_subgraph = &args[5];
 
     let mut errors = Vec::new();
-    let is_subgraph = parse_boolean(subgraph, "subgraph").unwrap_or_else(|err| {
+    let subgraph_required = parse_boolean(subgraph, "subgraph").unwrap_or_else(|err| {
         errors.push(err);
         false
     });
@@ -43,17 +43,23 @@ async fn main() {
             None => Some(Error::AuthNotEnforced),
             other_err => other_err,
         }
-    } else if is_subgraph && !allow_insecure_subgraph {
-        errors.push(Error::InsecureSubgraph)
     }
     if let Some(err) = unauthed_err {
         errors.push(err);
     }
 
-    if is_subgraph {
-        if let Err(err) = check_subgraph(url, auth).await {
+    let subgraph_err = check_subgraph(url, auth).await.err();
+    let is_subgraph = if let Some(err) = subgraph_err {
+        if subgraph_required {
             errors.push(err);
         }
+        false
+    } else {
+        true
+    };
+
+    if auth.is_none() && !allow_insecure_subgraph && is_subgraph {
+        errors.push(Error::InsecureSubgraph)
     }
 
     let allow_introspection = match introspection.as_str() {
@@ -92,7 +98,7 @@ fn parse_boolean(value: &str, name: &'static str) -> Result<bool, Error> {
     }
 }
 
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Error {
     BadUri,
     BadStatus(StatusCode),

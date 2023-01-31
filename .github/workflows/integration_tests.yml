@@ -129,7 +129,6 @@ jobs:
         uses: ./
         with:
           endpoint: https://graphql-test.up.railway.app/subgraph
-          subgraph: true
       - name: Verify failure
         if: steps.test.outputs.error != ''
         run: echo "Failed as expected"
