@@ -45,7 +45,7 @@ If the `auth` parameter is provided, that header will be included in the request
 
 ### Introspection disabled
 
-Generally speaking, [introspection should be disabled for non-subgraphs][introspection explanation]. As such, by default this action will fail if `subgraph` is `false` (the default) and the server responds with some content to the following query:
+Generally speaking, [introspection should be disabled for non-subgraphs][introspection explanation]. As such, by default this action will fail if the graph is not a [federated subgraph] (checked dynamically) and the server responds with some content to the following query:
 
 ```graphql
 query {
@@ -67,7 +67,7 @@ If subgraph features are detected (by running the "Subgraph compatibility" check
 
 ### Subgraph compatibility
 
-If the `subgraph` input is set to `true`, this action will check that the subgraph contains the required Federation elements. Specifically, it will run the query:
+If the `subgraph` input is set to `true`, this action will require that the endpoint is a [federation subgraph]. Specifically, it must return something for `sdl` in this query:
 
 ```graphql
 query {
