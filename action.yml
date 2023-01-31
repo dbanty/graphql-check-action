@@ -26,7 +26,7 @@ outputs:
     description: 'The description of any error that occurred'
 runs:
   using: 'docker'
-  image: 'Dockerfile'
+  image: 'ghcr.io/dbanty/graphql-check-rust:v1'
   args:
     - ${{ inputs.endpoint }}
     - ${{ inputs.auth }}
