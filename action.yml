@@ -1,6 +1,9 @@
 name: Check GraphQL
 description: Checks your GraphQL endpoint for problems
 author: 'Dylan Anthony'
+branding:
+  icon: check-circle
+  color: purple
 inputs:
   endpoint:
     description: 'The GraphQL endpoint to check'
