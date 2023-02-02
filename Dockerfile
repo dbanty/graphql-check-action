@@ -15,7 +15,7 @@ FROM clux/muslrust:stable AS builder
 COPY . .
 COPY --from=cacher /volume/target target
 COPY --from=cacher /root/.cargo /root/.cargo
-RUN cargo buildn --release --target x86_64-unknown-linux-musl
+RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # Setup minimal runtime for teeny images (makes for faster GitHub Actions)
 FROM gcr.io/distroless/static:nonroot
