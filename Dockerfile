@@ -7,13 +7,14 @@ WORKDIR /graphql-check-action
 # copy over your manifests
 COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
+# Cargo needs any referenced benches too, even though we're not building them
+COPY ./benches ./benches
 
 # this build step will cache your dependencies
 RUN cargo build --release
 RUN rm src/*.rs
 
 # copy your source tree
-COPY ./benches ./benches
 COPY ./src ./src
 
 # build for release
