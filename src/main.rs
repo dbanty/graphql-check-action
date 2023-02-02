@@ -146,7 +146,7 @@ async fn basic_query(url: &str, auth_header: Option<&str>) -> Result<(), Error> 
     }));
     let request = add_auth(auth_header, request)?;
     let body = get_json(request).await?;
-    if body == json!({"data": {"__typename": "Query"}}) {
+    if let Some(Value::String(_)) = body.pointer("/data/__typename") {
         Ok(())
     } else {
         Err(Error::NotGraphQL)
