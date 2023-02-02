@@ -2,7 +2,7 @@ name: Docker Publish
 
 on:
   push:
-    branches: [ "v1", "parallelize" ]
+    branches: [ "v1", "experimental" ]
 
 env:
   REGISTRY: ghcr.io

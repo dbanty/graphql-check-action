@@ -1,48 +1,36 @@
 use std::fmt::Display;
-use std::sync::Arc;
 
-use reqwest::{RequestBuilder, StatusCode};
 use serde_json::Value::Object;
 use serde_json::{json, Value};
+use ureq::{Request, Response};
 
-pub async fn run_checks(
+pub fn run_checks(
     url: &str,
     auth: Auth,
     subgraph: Subgraph,
     introspection: Introspection,
 ) -> Result<(), Vec<Error>> {
     let mut errors = Vec::new();
-    let url = Arc::new(url.to_string());
 
-    let unauthed_future = tokio::spawn(basic_query(url.clone(), Auth::Disabled));
-    let subgraph_future = tokio::spawn(check_subgraph(url.clone(), auth.clone()));
-    let introspection_future = if let Introspection::Disallow = introspection {
-        Some(tokio::spawn(require_introspection_disabled(
-            url.clone(),
-            auth.clone(),
-        )))
-    } else {
-        None
-    };
+    let basic_err = basic_query(url, Auth::Disabled).err();
+    let subgraph_err = check_subgraph(url, auth).err();
 
     let unauthed_err = if auth.is_enabled() {
-        if let Some(authed_err) = basic_query(url.clone(), auth.clone()).await.err() {
+        if let Some(authed_err) = basic_query(url, auth).err() {
             errors.push(authed_err);
         }
-        match unauthed_future.await {
-            Ok(Err(Error::GraphQLError(_) | Error::BadStatus(_))) => None,
-            Ok(Ok(())) => Some(Error::AuthNotEnforced),
-            Ok(Err(other_err)) => Some(other_err),
-            Err(_) => None,
+        match basic_err {
+            Some(Error::GraphQLError(_) | Error::BadStatus(_)) => None,
+            None => Some(Error::AuthNotEnforced),
+            other_err => other_err,
         }
     } else {
-        unauthed_future.await.ok().and_then(|res| res.err())
+        basic_err
     };
     if let Some(err) = unauthed_err {
         errors.push(err);
     }
 
-    let subgraph_err = subgraph_future.await.ok().and_then(|res| res.err());
     let is_subgraph = if let Some(err) = subgraph_err {
         if subgraph.required() {
             errors.push(err);
@@ -56,8 +44,8 @@ pub async fn run_checks(
         errors.push(Error::InsecureSubgraph)
     }
 
-    if let Some(fut) = introspection_future {
-        if let Ok(Err(e)) = fut.await {
+    if let Introspection::Disallow = introspection {
+        if let Err(e) = require_introspection_disabled(url, auth) {
             errors.push(e);
         }
     }
@@ -69,23 +57,13 @@ pub async fn run_checks(
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum Auth {
-    Enabled { header: Arc<String> },
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Auth<'a> {
+    Enabled { header: &'a str },
     Disabled,
 }
 
-impl Auth {
-    pub fn new(header: Option<String>) -> Self {
-        if let Some(header) = header {
-            Self::Enabled {
-                header: Arc::new(header),
-            }
-        } else {
-            Self::Disabled
-        }
-    }
-
+impl Auth<'_> {
     const fn is_enabled(&self) -> bool {
         matches!(self, Auth::Enabled { .. })
     }
@@ -117,7 +95,7 @@ pub enum Introspection {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Error {
     BadUri,
-    BadStatus(StatusCode),
+    BadStatus(u16),
     CouldNotConnect,
     NotGraphQL,
     GraphQLError(String),
@@ -155,13 +133,11 @@ impl Display for Error {
     }
 }
 
-async fn basic_query(url: Arc<String>, auth: Auth) -> Result<(), Error> {
-    let client = reqwest::Client::new();
-    let request = client.post(url.as_str()).json(&json!({
+fn basic_query(url: &str, auth: Auth) -> Result<(), Error> {
+    let response = make_request(url, auth)?.send_json(json!({
         "query": "query{__typename}",
     }));
-    let request = add_auth(auth, request)?;
-    let body = get_json(request).await?;
+    let body = get_json(response)?;
     if let Some(Value::String(_)) = body.pointer("/data/__typename") {
         Ok(())
     } else {
@@ -169,28 +145,26 @@ async fn basic_query(url: Arc<String>, auth: Auth) -> Result<(), Error> {
     }
 }
 
-fn add_auth(auth: Auth, request: RequestBuilder) -> Result<RequestBuilder, Error> {
+fn make_request(url: &str, auth: Auth) -> Result<Request, Error> {
+    let request = ureq::post(url);
     if let Auth::Enabled { header } = auth {
         let (header_name, header_value) = header.split_once(':').ok_or(Error::BadHeader)?;
         let header_value = header_value.trim();
-        Ok(request.header(header_name, header_value))
+        Ok(request.set(header_name, header_value))
     } else {
         Ok(request)
     }
 }
 
-async fn get_json(request: RequestBuilder) -> Result<Value, Error> {
-    let res = request.send().await.map_err(|err| {
-        if err.is_builder() {
-            Error::BadUri
-        } else {
-            Error::CouldNotConnect
-        }
+fn get_json(response: Result<Response, ureq::Error>) -> Result<Value, Error> {
+    let res = response.map_err(|err| match err {
+        ureq::Error::Status(status, _) => Error::BadStatus(status),
+        ureq::Error::Transport(t) => match t.kind() {
+            ureq::ErrorKind::InvalidUrl | ureq::ErrorKind::UnknownScheme => Error::BadUri,
+            _ => Error::CouldNotConnect,
+        },
     })?;
-    if let Err(err) = res.error_for_status_ref() {
-        return Err(Error::BadStatus(err.status().unwrap()));
-    }
-    let body: Value = res.json().await.or(Err(Error::NotGraphQL))?;
+    let body: Value = res.into_json().or(Err(Error::NotGraphQL))?;
     if let Some(obj) = body.get("errors") {
         Err(Error::GraphQLError(obj.to_string()))
     } else {
@@ -201,13 +175,13 @@ async fn get_json(request: RequestBuilder) -> Result<Value, Error> {
 #[cfg(test)]
 mod test_utils {
     use crate::Auth;
+    use const_format::formatcp;
 
     pub const BASE_URL: &str = "https://graphql-test.up.railway.app";
-
-    pub fn auth() -> Auth {
-        const TOKEN: &str = env!("GRAPHQL_TOKEN");
-        Auth::new(Some(format!("Authorization: Bearer {TOKEN}")))
-    }
+    const TOKEN: &str = env!("GRAPHQL_TOKEN");
+    pub const AUTH: Auth<'static> = Auth::Enabled {
+        header: formatcp!("Authorization: Bearer {}", TOKEN),
+    };
 }
 
 #[cfg(test)]
@@ -217,106 +191,93 @@ mod test_basic_query {
     use super::test_utils::*;
     use super::*;
 
-    #[tokio::test]
-    async fn unauth_success() {
+    #[test]
+    fn unauth_success() {
         let url = format!("{BASE_URL}/graphql");
-        assert!(basic_query(Arc::new(url), Auth::Disabled).await.is_ok());
+        assert!(basic_query(&url, Auth::Disabled).is_ok());
     }
 
-    #[tokio::test]
-    async fn success_subgraph() {
+    #[test]
+    fn success_subgraph() {
         let url = format!("{BASE_URL}/subgraph");
-        assert!(basic_query(Arc::new(url), Auth::Disabled).await.is_ok());
+        assert!(basic_query(&url, Auth::Disabled).is_ok());
     }
 
-    #[tokio::test]
-    async fn bad_url() {
+    #[test]
+    fn bad_url() {
         let url = BASE_URL.to_string();
         let url_without_scheme = url.split('/').nth(2).unwrap().to_string();
         assert_eq!(
-            basic_query(Arc::new(url_without_scheme), Auth::Disabled).await,
+            basic_query(&url_without_scheme, Auth::Disabled),
             Err(BadUri)
         );
     }
 
-    #[tokio::test]
-    async fn not_found() {
+    #[test]
+    fn not_found() {
         let url = "https://doesntexist.dylananthony.com";
-        assert_eq!(
-            basic_query(Arc::new(url.to_string()), Auth::Disabled).await,
-            Err(CouldNotConnect)
-        );
+        assert_eq!(basic_query(url, Auth::Disabled), Err(CouldNotConnect));
     }
 
-    #[tokio::test]
-    async fn post_not_accepted() {
+    #[test]
+    fn post_not_accepted() {
         let url = format!("{BASE_URL}/no-post");
-        assert_eq!(
-            basic_query(Arc::new(url), Auth::Disabled).await,
-            Err(BadStatus(StatusCode::METHOD_NOT_ALLOWED))
-        );
+        assert_eq!(basic_query(&url, Auth::Disabled), Err(BadStatus(405)));
     }
 
-    #[tokio::test]
-    async fn no_json_returned() {
+    #[test]
+    fn no_json_returned() {
         let url = format!("{BASE_URL}/no-json");
-        assert_eq!(
-            basic_query(Arc::new(url), Auth::Disabled).await,
-            Err(NotGraphQL)
-        );
+        assert_eq!(basic_query(&url, Auth::Disabled), Err(NotGraphQL));
     }
 
-    #[tokio::test]
-    async fn not_graphql() {
+    #[test]
+    fn not_graphql() {
         let url = format!("{BASE_URL}/json");
-        assert_eq!(
-            basic_query(Arc::new(url), Auth::Disabled).await,
-            Err(NotGraphQL)
-        );
+        assert_eq!(basic_query(&url, Auth::Disabled), Err(NotGraphQL));
     }
 
-    #[tokio::test]
-    async fn auth_success() {
+    #[test]
+    fn auth_success() {
         let url = format!("{BASE_URL}/graphql-auth");
-        assert_eq!(basic_query(Arc::new(url), auth()).await, Ok(()));
+        assert_eq!(basic_query(&url, AUTH), Ok(()));
     }
 
-    #[tokio::test]
-    async fn subgraph_auth_success() {
+    #[test]
+    fn subgraph_auth_success() {
         let url = format!("{BASE_URL}/subgraph-auth");
-        assert!(basic_query(Arc::new(url), auth()).await.is_ok());
+        assert!(basic_query(&url, AUTH).is_ok());
     }
 
-    #[tokio::test]
-    async fn auth_failure() {
+    #[test]
+    fn auth_failure() {
         let url = format!("{BASE_URL}/graphql-auth");
         assert!(matches!(
             basic_query(
-                Arc::new(url),
-                Auth::new(Some(String::from("Authorization: Bearer nottherealtoken")))
-            )
-            .await,
+                &url,
+                Auth::Enabled {
+                    header: "Authorization: Bearer nottherealtoken"
+                }
+            ),
             Err(GraphQLError(_))
         ));
     }
 
-    #[tokio::test]
-    async fn missing_auth() {
+    #[test]
+    fn missing_auth() {
         let url = format!("{BASE_URL}/graphql-auth");
-        match basic_query(Arc::new(url), Auth::Disabled).await {
-            Err(BadStatus(StatusCode::BAD_REQUEST)) => (),
+        match basic_query(&url, Auth::Disabled) {
+            Err(BadStatus(400)) => (),
             other => panic!("Expected Err(GraphQLError(_)), got {:?}", other),
         }
     }
 }
 
-async fn check_subgraph(url: Arc<String>, auth: Auth) -> Result<(), Error> {
-    let client = reqwest::Client::new();
-    let request = client.post(url.as_str()).json(&json!({
+fn check_subgraph(url: &str, auth: Auth) -> Result<(), Error> {
+    let response = make_request(url, auth)?.send_json(json!({
         "query": "query{_service{sdl}}"
     }));
-    let request = add_auth(auth, request)?;
-    if get_json(request).await.is_ok() {
+    if get_json(response).is_ok() {
         Ok(())
     } else {
         Err(Error::NotASubgraph)
@@ -330,25 +291,22 @@ mod test_check_subgraph {
     use super::test_utils::*;
     use super::*;
 
-    #[tokio::test]
-    async fn happy() {
+    #[test]
+    fn happy() {
         let url = format!("{BASE_URL}/subgraph");
-        check_subgraph(Arc::new(url), Auth::Disabled).await.unwrap();
+        check_subgraph(&url, Auth::Disabled).unwrap();
     }
 
-    #[tokio::test]
-    async fn happy_with_auth() {
+    #[test]
+    fn happy_with_auth() {
         let url = format!("{BASE_URL}/subgraph-auth");
-        check_subgraph(Arc::new(url), auth()).await.unwrap();
+        check_subgraph(&url, AUTH).unwrap();
     }
 
-    #[tokio::test]
-    async fn not_a_subgraph() {
+    #[test]
+    fn not_a_subgraph() {
         let url = format!("{BASE_URL}/graphql");
-        assert_eq!(
-            check_subgraph(Arc::new(url), Auth::Disabled).await,
-            Err(NotASubgraph)
-        );
+        assert_eq!(check_subgraph(&url, Auth::Disabled), Err(NotASubgraph));
     }
 }
 
@@ -359,31 +317,27 @@ mod test_require_introspection_disabled {
     use super::test_utils::*;
     use super::*;
 
-    #[tokio::test]
-    async fn happy() {
+    #[test]
+    fn happy() {
         let url = format!("{BASE_URL}/graphql-no-introspection");
-        require_introspection_disabled(Arc::new(url), Auth::Disabled)
-            .await
-            .unwrap();
+        require_introspection_disabled(&url, Auth::Disabled).unwrap();
     }
 
-    #[tokio::test]
-    async fn introspection_enabled() {
+    #[test]
+    fn introspection_enabled() {
         let url = format!("{BASE_URL}/graphql");
         assert_eq!(
-            require_introspection_disabled(Arc::new(url), Auth::Disabled).await,
+            require_introspection_disabled(&url, Auth::Disabled),
             Err(IntrospectionEnabled)
         );
     }
 }
 
-async fn require_introspection_disabled(url: Arc<String>, auth: Auth) -> Result<(), Error> {
-    let client = reqwest::Client::new();
-    let request = client.post(url.as_str()).json(&json!({
+fn require_introspection_disabled(url: &str, auth: Auth) -> Result<(), Error> {
+    let response = make_request(url, auth)?.send_json(json!({
         "query": "query{__schema{types{name}}}"
     }));
-    let request = add_auth(auth, request)?;
-    match get_json(request).await {
+    match get_json(response) {
         Ok(value) => {
             if let Some(Object(_)) = value.pointer("/data/__schema") {
                 return Err(Error::IntrospectionEnabled);

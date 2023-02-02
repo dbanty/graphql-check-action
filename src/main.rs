@@ -4,17 +4,15 @@ use std::env;
 use std::fs::write;
 use std::process::exit;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let github_output_path = env::var("GITHUB_OUTPUT").unwrap();
 
     let args: Vec<String> = env::args().collect();
     let url = &args[1];
-    let auth_header = match args[2].as_str() {
-        "" => None,
-        header => Some(String::from(header)),
+    let auth = match args[2].as_str() {
+        "" => Auth::Disabled,
+        header => Auth::Enabled { header },
     };
-    let auth = Auth::new(auth_header);
     let subgraph_input = &args[3];
     let allow_introspection = &args[4];
     let insecure_subgraph = &args[5];
@@ -47,7 +45,7 @@ async fn main() {
             Introspection::Allow
         }
     };
-    if let Some(errs) = run_checks(url, auth, subgraph, introspection).await.err() {
+    if let Some(errs) = run_checks(url, auth, subgraph, introspection).err() {
         errors.extend(errs)
     }
 
