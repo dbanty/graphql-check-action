@@ -18,6 +18,6 @@ COPY --from=cacher /root/.cargo /root/.cargo
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # Setup minimal runtime for teeny images (makes for faster GitHub Actions)
-FROM gcr.io/distroless/static:nonroot
-COPY --from=builder --chown=nonroot:nonroot /volume/target/x86_64-unknown-linux-musl/release/graphql-check-action /graphql-check-action
+FROM gcr.io/distroless/static
+COPY --from=builder /volume/target/x86_64-unknown-linux-musl/release/graphql-check-action /graphql-check-action
 ENTRYPOINT ["/graphql-check-action"]
