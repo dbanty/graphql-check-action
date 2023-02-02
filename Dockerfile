@@ -1,23 +1,31 @@
-# Create a "recipe" to enable caching of dependencies
-FROM clux/muslrust:stable AS planner
-RUN cargo install cargo-chef
-COPY . .
-RUN cargo chef prepare --recipe-path recipe.json
+FROM rust:1.67 as build
 
-# Cache dependencies for future builds
-FROM clux/muslrust:stable AS cacher
-RUN cargo install cargo-chef
-COPY --from=planner /volume/recipe.json recipe.json
-RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
+# create a new empty shell project
+RUN USER=root cargo new --bin graphql-check-action
+WORKDIR /graphql-check-action
 
-# Build the actual binary
-FROM clux/muslrust:stable AS builder
-COPY . .
-COPY --from=cacher /volume/target target
-COPY --from=cacher /root/.cargo /root/.cargo
-RUN cargo build --bin run --release --target x86_64-unknown-linux-musl
+# copy over your manifests
+COPY ./Cargo.lock ./Cargo.lock
+COPY ./Cargo.toml ./Cargo.toml
+# Cargo needs any referenced benches too, even though we're not building them
+COPY ./benches ./benches
 
-# Setup minimal runtime for teeny images (makes for faster GitHub Actions)
-FROM gcr.io/distroless/static:nonroot
-COPY --from=builder --chown=nonroot:nonroot /volume/target/x86_64-unknown-linux-musl/release/graphql-check-action /graphql-check-action
+# this build step will cache your dependencies
+RUN cargo build --release
+RUN rm src/*.rs
+
+# copy your source tree
+COPY ./src ./src
+
+# build for release
+RUN rm ./target/release/deps/graphql_check_action*
+RUN cargo build --release
+
+# our final base
+FROM gcr.io/distroless/cc AS runtime
+
+# copy the build artifact from the build stage
+COPY --from=build /graphql-check-action/target/release/graphql-check-action .
+
+# set the startup command to run your binary
 ENTRYPOINT ["/graphql-check-action"]
