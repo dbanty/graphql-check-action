@@ -13,6 +13,7 @@ RUN cargo build --release
 RUN rm src/*.rs
 
 # copy your source tree
+COPY ./benches ./benches
 COPY ./src ./src
 
 # build for release
