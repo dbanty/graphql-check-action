@@ -14,7 +14,7 @@ ureq = { version = "2.6.2", features = ["json"] }
 serde_json = "1.0.96"
 
 [dev-dependencies]
-const_format = "0.2.30"
+const_format = "0.2.31"
 criterion = { version = "0.5.1" }
 
 [[bench]]
