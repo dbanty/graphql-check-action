@@ -29,7 +29,7 @@ outputs:
     description: 'The description of any error that occurred'
 runs:
   using: 'docker'
-  image: 'ghcr.io/dbanty/graphql-check-action:v1'
+  image: 'docker://ghcr.io/dbanty/graphql-check-action:v1'
   args:
     - ${{ inputs.endpoint }}
     - ${{ inputs.auth }}
