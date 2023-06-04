@@ -99,7 +99,7 @@ jobs:
     needs: deploy
     steps:
       - uses: actions/checkout@v3
-      - uses: dbanty/check-graphql-action@v1
+      - uses: dbanty/graphql-check-action@v1
         with:
           endpoint: ${{ vars.PRODUCTION_ENDPOINT }}
           auth: "Authorization: Bearer ${{ secrets.TEST_TOKEN }}"
@@ -125,7 +125,7 @@ jobs:
     needs: deploy
     steps:
       - uses: actions/checkout@v3
-      - uses: dbanty/check-graphql-action@v1
+      - uses: dbanty/graphql-check-action@v1
         with:
           endpoint: ${{ vars.PRODUCTION_ENDPOINT }}
           allow_introspection: true
@@ -151,7 +151,7 @@ jobs:
     needs: deploy
     steps:
       - uses: actions/checkout@v3
-      - uses: dbanty/check-graphql-action@v1
+      - uses: dbanty/graphql-check-action@v1
         with:
           endpoint: ${{ vars.PRODUCTION_ENDPOINT }}
           auth: "Gateway-Authorization: Bearer ${{ secrets.AUTH_TOKEN }}"
