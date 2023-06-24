@@ -24,6 +24,10 @@ inputs:
     description: 'Whether the subgraph is allowed to be insecure'
     required: false
     default: 'false'
+  token:
+    description: 'The GitHub token to use for downloading the action, defaults to workflow token'
+    required: true
+    default: ${{ github.token }}
 outputs:
   error:
     description: 'The description of any error that occurred'
