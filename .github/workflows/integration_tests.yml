@@ -1,7 +1,7 @@
 name: Test consuming this action
 on:
   release:
-    types: [released, prereleased]
+    types: [released, created]
 
 jobs:
   basic_checks:

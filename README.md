@@ -16,6 +16,7 @@ This action checks your GraphQL server health after deployment. Specifically, it
 | `subgraph`            | Whether the endpoint is expected to be a [Federation subgraph]                                                                       | `false`             |
 | `allow_introspection` | Whether the GraphQL server should have introspection enabled. This [should be disabled for non-subgraphs][introspection explanation] | value of `subgraph` |
 | `insecure_subgraph`   | Whether it is acceptable for your `auth` to be empty when `subgraph` is `true`. You generally [don't want this][subgraph security]   | `false`             |
+| `token`               | The GitHub token to use for GitHub API calls. May be needed if using this action very frequently.                                    | Workflow token      | 
 
 ## Tests
 
@@ -151,7 +152,7 @@ jobs:
     needs: deploy
     steps:
       - uses: actions/checkout@v3
-      - uses: dbanty/graphql-check-action@v1
+      - uses: dbanty/graphql-check-action@2.0.0
         with:
           endpoint: ${{ vars.PRODUCTION_ENDPOINT }}
           auth: "Gateway-Authorization: Bearer ${{ secrets.AUTH_TOKEN }}"
