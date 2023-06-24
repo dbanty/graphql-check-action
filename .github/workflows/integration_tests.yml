@@ -1,7 +1,10 @@
 name: Test consuming this action
 on:
   release:
-    types: [released, created]
+    types: [released]
+  workflow_run:
+    workflows: ["Release"]
+    types: ["completed"]
 
 jobs:
   basic_checks:
