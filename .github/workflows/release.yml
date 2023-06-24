@@ -24,7 +24,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.target }}
     env:
-      binary_name: sample-rust-action${{ matrix.file_extension }}
+      binary_name: graphql-check-action${{ matrix.file_extension }}
 
     steps:
       - uses: actions/checkout@v3
