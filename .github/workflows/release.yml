@@ -64,7 +64,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4.1.7
-      - uses: actions/download-artifact@v4.1.7
+      - uses: actions/download-artifact@v4.1.8
       - name: Create Release
         uses: ncipollo/release-action@v1.14.0
         with:
