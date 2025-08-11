@@ -27,7 +27,7 @@ jobs:
       binary_name: graphql-check-action${{ matrix.file_extension }}
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4.3.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -63,7 +63,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4.3.0
       - uses: actions/download-artifact@v5.0.0
       - name: Create Release
         uses: ncipollo/release-action@v1.18.0
